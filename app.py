@@ -45,8 +45,8 @@ def sort_history(history: pd.DataFrame) -> pd.DataFrame:
 
     sorted_history = sorted_history.sort_values(
         by="_정렬용 날짜",
-        ascending=True,
-        na_position="first",
+        ascending=False,
+        na_position="last",
         kind="stable",
     )
 
@@ -78,7 +78,7 @@ def history_for_display(history: pd.DataFrame) -> pd.DataFrame:
 
 
 def read_history() -> pd.DataFrame:
-    """CSV에서 누적 기록을 읽고 오래된 순으로 정렬합니다."""
+    """CSV에서 누적 기록을 읽고 최신순으로 정렬합니다."""
     columns = ["날짜", "상품", "수량"]
 
     if not HISTORY_CSV.exists():
@@ -97,7 +97,7 @@ def read_history() -> pd.DataFrame:
 
 
 def append_history(records: list[dict]) -> None:
-    """새 기록을 CSV에 추가하고 오래된 순으로 저장합니다."""
+    """새 기록을 CSV에 추가하고 최신순으로 저장합니다."""
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
     history = read_history()
