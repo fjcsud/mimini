@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -13,12 +14,12 @@ RESULT_DIR = Path("result")
 HISTORY_CSV = RESULT_DIR / "counts.csv"
 
 st.set_page_config(
-    page_title="나의 소비패턴",
+    page_title="상품 인식 및 수량 집계",
     page_icon="🛒",
     layout="wide",
 )
 
-st.title("🛒 나의 소비패턴")
+st.title("🛒 상품 인식 및 수량 집계")
 st.caption(
     "이미지를 업로드하거나 카메라로 촬영하면 객체를 탐지하고 상품별 수량을 기록합니다."
 )
@@ -30,7 +31,7 @@ def load_model(model_path: str):
 
 
 def sort_history(history: pd.DataFrame) -> pd.DataFrame:
-    """날짜를 실제 시각으로 해석해 최신 기록이 위에 오도록 정렬합니다."""
+    """날짜를 실제 시각으로 해석해 오래된 기록부터 정렬합니다."""
     if history.empty:
         return history.reset_index(drop=True)
 
@@ -44,8 +45,8 @@ def sort_history(history: pd.DataFrame) -> pd.DataFrame:
 
     sorted_history = sorted_history.sort_values(
         by="_정렬용 날짜",
-        ascending=False,
-        na_position="last",
+        ascending=True,
+        na_position="first",
         kind="stable",
     )
 
@@ -57,18 +58,27 @@ def sort_history(history: pd.DataFrame) -> pd.DataFrame:
 
 
 def history_for_display(history: pd.DataFrame) -> pd.DataFrame:
-    """화면과 다운로드용 날짜에서 초 이하 숫자를 숨깁니다."""
+    """한국 시간으로 변환하고 초까지만 화면과 다운로드에 표시합니다."""
     display_history = history.copy()
-    display_history["날짜"] = display_history["날짜"].astype(str).str.replace(
-        r"(\d{2}:\d{2}:\d{2})\.\d+",
-        r"\1",
-        regex=True,
+
+    parsed_dates = pd.to_datetime(
+        display_history["날짜"],
+        format="mixed",
+        errors="coerce",
+        utc=True,
     )
+
+    display_history["날짜"] = (
+        parsed_dates.dt.tz_convert("Asia/Seoul")
+        .dt.strftime("%Y-%m-%d %H:%M:%S")
+        .fillna(display_history["날짜"].astype(str))
+    )
+
     return display_history
 
 
 def read_history() -> pd.DataFrame:
-    """CSV에서 누적 기록을 읽고 최신순으로 정렬합니다."""
+    """CSV에서 누적 기록을 읽고 오래된 순으로 정렬합니다."""
     columns = ["날짜", "상품", "수량"]
 
     if not HISTORY_CSV.exists():
@@ -87,7 +97,7 @@ def read_history() -> pd.DataFrame:
 
 
 def append_history(records: list[dict]) -> None:
-    """새 기록을 기존 CSV에 추가하고 최신순으로 저장합니다."""
+    """새 기록을 CSV에 추가하고 오래된 순으로 저장합니다."""
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
     history = read_history()
@@ -157,7 +167,7 @@ if image_file is not None:
 
             model = load_model(model_path.strip())
 
-            # Ultralytics 입력 형식에 맞춰 RGB를 BGR로 변환합니다.
+            # Ultralytics 입력 형식에 맞춰 RGB 이미지를 BGR로 변환합니다.
             image_array = cv2.cvtColor(
                 np.array(pil_image),
                 cv2.COLOR_RGB2BGR,
@@ -196,9 +206,10 @@ if image_file is not None:
 
             st.subheader("3. 이번 이미지의 집계")
 
-            # 마이크로초는 최신순 정렬을 위해 저장합니다.
-            # 화면과 다운로드에는 초까지만 표시됩니다.
-            detected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            # 배포 서버 시간대와 관계없이 한국 시각으로 저장합니다.
+            detected_at = datetime.now(ZoneInfo("Asia/Seoul")).isoformat(
+                timespec="microseconds"
+            )
 
             if counts:
                 current = pd.DataFrame(
