@@ -31,9 +31,9 @@ def load_model(model_path: str):
 
 
 def sort_history(history: pd.DataFrame) -> pd.DataFrame:
-    """날짜를 실제 시각으로 해석해 오래된 기록부터 정렬합니다."""
+    """날짜를 실제 시각으로 해석해 최근 기록부터 정렬합니다."""
     if history.empty:
-        return history.reset_index(drop=True)
+        return history.reset_index(drop=False)
 
     sorted_history = history.copy()
     sorted_history["_정렬용 날짜"] = pd.to_datetime(
