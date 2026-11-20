@@ -7,18 +7,18 @@ from PIL import Image
 from ultralytics import YOLO
 
 
-# 나중에 학습된 모델 경로로 바꿀 수 있습니다.
+# 나중에 학습한 모델 경로로 바꿀 수 있습니다.
 DEFAULT_MODEL = "yolo26n.pt"
 RESULT_DIR = Path("result")
 HISTORY_CSV = RESULT_DIR / "counts.csv"
 
 st.set_page_config(
-    page_title="장바구니 역사",
+    page_title="상품 인식 및 수량 집계",
     page_icon="🛒",
     layout="wide",
 )
 
-st.title("🛒 장바구니 역사")
+st.title("🛒 상품 인식 및 수량 집계")
 st.caption(
     "이미지를 업로드하거나 카메라로 촬영하면 객체를 탐지하고 상품별 수량을 기록합니다."
 )
@@ -29,8 +29,35 @@ def load_model(model_path: str):
     return YOLO(model_path)
 
 
+def sort_history(history: pd.DataFrame) -> pd.DataFrame:
+    """날짜 값을 실제 시각으로 변환해 최신 기록이 위에 오도록 정렬합니다."""
+    if history.empty:
+        return history.reset_index(drop=True)
+
+    sorted_history = history.copy()
+    sorted_history["_정렬용 날짜"] = pd.to_datetime(
+        sorted_history["날짜"],
+        format="mixed",
+        errors="coerce",
+        utc=True,
+    )
+
+    sorted_history = sorted_history.sort_values(
+        by="_정렬용 날짜",
+        ascending=False,
+        na_position="last",
+        kind="stable",
+    )
+
+    return (
+        sorted_history
+        .drop(columns="_정렬용 날짜")
+        .reset_index(drop=True)
+    )
+
+
 def read_history() -> pd.DataFrame:
-    """저장된 누적 기록을 읽습니다."""
+    """CSV에서 누적 기록을 읽고 최신순으로 정렬합니다."""
     columns = ["날짜", "상품", "수량"]
 
     if not HISTORY_CSV.exists():
@@ -42,21 +69,28 @@ def read_history() -> pd.DataFrame:
         if not set(columns).issubset(history.columns):
             return pd.DataFrame(columns=columns)
 
-        return history[columns]
+        return sort_history(history[columns])
 
     except (pd.errors.EmptyDataError, pd.errors.ParserError):
         return pd.DataFrame(columns=columns)
 
 
-def append_history(records: list[dict]) -> None:
-    """분석 결과를 CSV에 누적 저장합니다."""
+def append_history(records: list[dict]) -> pd.DataFrame:
+    """새 기록을 기존 CSV에 추가하고 최신순으로 저장합니다."""
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
     history = read_history()
     additions = pd.DataFrame(records, columns=["날짜", "상품", "수량"])
     combined = pd.concat([history, additions], ignore_index=True)
+    combined = sort_history(combined)
 
-    combined.to_csv(HISTORY_CSV, index=False, encoding="utf-8-sig")
+    combined.to_csv(
+        HISTORY_CSV,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    return combined
 
 
 with st.sidebar:
@@ -77,7 +111,7 @@ with st.sidebar:
 
     st.caption(
         "기본 모델은 일반 객체 클래스를 인식합니다. "
-        "나중에 상품별로 학습한 모델 경로를 입력할 수 있습니다."
+        "상품별 인식 모델은 나중에 경로를 바꾸면 됩니다."
     )
 
 
@@ -114,7 +148,7 @@ if image_file is not None:
 
             model = load_model(model_path.strip())
 
-            # Ultralytics 입력에 맞춰 RGB 이미지를 BGR로 변환합니다.
+            # Ultralytics 입력 형식에 맞춰 RGB를 BGR로 변환합니다.
             image_array = cv2.cvtColor(
                 np.array(pil_image),
                 cv2.COLOR_RGB2BGR,
@@ -142,7 +176,7 @@ if image_file is not None:
             )
 
             # 감지된 클래스별 수량을 계산합니다.
-            counts = {}
+            counts: dict[str, int] = {}
 
             if prediction.boxes is not None and prediction.boxes.cls is not None:
                 class_ids = prediction.boxes.cls.int().cpu().tolist()
@@ -151,9 +185,10 @@ if image_file is not None:
                     name = str(prediction.names[class_id])
                     counts[name] = counts.get(name, 0) + 1
 
-            detected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
             st.subheader("3. 이번 이미지의 집계")
+
+            # 마이크로초까지 기록해 같은 초에 저장해도 순서를 구분합니다.
+            detected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
             if counts:
                 current = pd.DataFrame(
@@ -174,7 +209,7 @@ if image_file is not None:
                 )
 
                 append_history(current.to_dict(orient="records"))
-                st.success("집계를 저장했습니다.")
+                st.success(f"집계를 저장했습니다: {HISTORY_CSV}")
 
             else:
                 st.info(
@@ -203,26 +238,9 @@ st.subheader("저장된 전체 기록")
 
 history = read_history()
 
-if not history.empty:
-    history["_정렬용 날짜"] = pd.to_datetime(
-        history["날짜"],
-        errors="coerce",
-    )
-    history = (
-        history.sort_values(
-            by="_정렬용 날짜",
-            ascending=False,
-            na_position="last",
-            kind="stable",
-        )
-        .drop(columns="_정렬용 날짜")
-        .reset_index(drop=True)
-    )
-
 if history.empty:
-    st.info("아직 저장된 기록이 없습니다. 사진을 분석하면 기록이 쌓입니다.")
+    st.info("아직 저장된 기록이 없습니다. 사진을 분석하면 이곳에 누적됩니다.")
 else:
-    # 저장된 전체 기록을 표로 표시합니다.
     st.dataframe(
         history,
         use_container_width=True,
@@ -241,8 +259,7 @@ else:
 if st.button("전체 기록 초기화", type="secondary"):
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-    empty_history = pd.DataFrame(columns=["날짜", "상품", "수량"])
-    empty_history.to_csv(
+    pd.DataFrame(columns=["날짜", "상품", "수량"]).to_csv(
         HISTORY_CSV,
         index=False,
         encoding="utf-8-sig",
