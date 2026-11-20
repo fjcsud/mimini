@@ -30,18 +30,33 @@ def load_model(model_path: str):
     return YOLO(model_path)
 
 
+def parse_history_dates(values: pd.Series) -> pd.Series:
+    """시간대가 없는 기존 기록은 한국 시각으로 해석합니다."""
+    parsed_values = []
+
+    for value in values:
+        parsed = pd.to_datetime(value, errors="coerce")
+
+        if pd.isna(parsed):
+            parsed_values.append(pd.NaT)
+        elif parsed.tzinfo is None:
+            parsed_values.append(parsed.tz_localize("Asia/Seoul"))
+        else:
+            parsed_values.append(parsed)
+
+    return pd.Series(
+        pd.to_datetime(parsed_values, errors="coerce", utc=True),
+        index=values.index,
+    )
+
+
 def sort_history(history: pd.DataFrame) -> pd.DataFrame:
     """날짜를 실제 시각으로 해석해 최근 기록부터 정렬합니다."""
     if history.empty:
         return history.reset_index(drop=False)
 
     sorted_history = history.copy()
-    sorted_history["_정렬용 날짜"] = pd.to_datetime(
-        sorted_history["날짜"],
-        format="mixed",
-        errors="coerce",
-        utc=True,
-    )
+    sorted_history["_정렬용 날짜"] = parse_history_dates(sorted_history["날짜"])
 
     sorted_history = sorted_history.sort_values(
         by="_정렬용 날짜",
@@ -61,12 +76,7 @@ def history_for_display(history: pd.DataFrame) -> pd.DataFrame:
     """한국 시간으로 변환하고 초까지만 화면과 다운로드에 표시합니다."""
     display_history = history.copy()
 
-    parsed_dates = pd.to_datetime(
-        display_history["날짜"],
-        format="mixed",
-        errors="coerce",
-        utc=True,
-    )
+    parsed_dates = parse_history_dates(display_history["날짜"])
 
     display_history["날짜"] = (
         parsed_dates.dt.tz_convert("Asia/Seoul")
