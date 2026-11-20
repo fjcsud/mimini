@@ -13,12 +13,12 @@ RESULT_DIR = Path("result")
 HISTORY_CSV = RESULT_DIR / "counts.csv"
 
 st.set_page_config(
-    page_title="상품 인식 및 수량 집계",
+    page_title="나의 소비패턴",
     page_icon="🛒",
     layout="wide",
 )
 
-st.title("🛒 상품 인식 및 수량 집계")
+st.title("🛒 나의 소비패턴")
 st.caption(
     "이미지를 업로드하거나 카메라로 촬영하면 객체를 탐지하고 상품별 수량을 기록합니다."
 )
