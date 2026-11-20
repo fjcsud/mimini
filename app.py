@@ -30,7 +30,7 @@ def load_model(model_path: str):
 
 
 def sort_history(history: pd.DataFrame) -> pd.DataFrame:
-    """날짜 값을 실제 시각으로 변환해 최신 기록이 위에 오도록 정렬합니다."""
+    """날짜를 실제 시각으로 해석해 최신 기록이 위에 오도록 정렬합니다."""
     if history.empty:
         return history.reset_index(drop=True)
 
@@ -56,6 +56,17 @@ def sort_history(history: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def history_for_display(history: pd.DataFrame) -> pd.DataFrame:
+    """화면과 다운로드용 날짜에서 초 이하 숫자를 숨깁니다."""
+    display_history = history.copy()
+    display_history["날짜"] = display_history["날짜"].astype(str).str.replace(
+        r"(\d{2}:\d{2}:\d{2})\.\d+",
+        r"\1",
+        regex=True,
+    )
+    return display_history
+
+
 def read_history() -> pd.DataFrame:
     """CSV에서 누적 기록을 읽고 최신순으로 정렬합니다."""
     columns = ["날짜", "상품", "수량"]
@@ -75,7 +86,7 @@ def read_history() -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
 
 
-def append_history(records: list[dict]) -> pd.DataFrame:
+def append_history(records: list[dict]) -> None:
     """새 기록을 기존 CSV에 추가하고 최신순으로 저장합니다."""
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -89,8 +100,6 @@ def append_history(records: list[dict]) -> pd.DataFrame:
         index=False,
         encoding="utf-8-sig",
     )
-
-    return combined
 
 
 with st.sidebar:
@@ -187,7 +196,8 @@ if image_file is not None:
 
             st.subheader("3. 이번 이미지의 집계")
 
-            # 마이크로초까지 기록해 같은 초에 저장해도 순서를 구분합니다.
+            # 마이크로초는 최신순 정렬을 위해 저장합니다.
+            # 화면과 다운로드에는 초까지만 표시됩니다.
             detected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
             if counts:
@@ -203,13 +213,13 @@ if image_file is not None:
                 )
 
                 st.dataframe(
-                    current,
+                    history_for_display(current),
                     use_container_width=True,
                     hide_index=True,
                 )
 
                 append_history(current.to_dict(orient="records"))
-                st.success(f"집계를 저장했습니다: {HISTORY_CSV}")
+                st.success("집계를 저장했습니다.")
 
             else:
                 st.info(
@@ -241,15 +251,17 @@ history = read_history()
 if history.empty:
     st.info("아직 저장된 기록이 없습니다. 사진을 분석하면 이곳에 누적됩니다.")
 else:
+    display_history = history_for_display(history)
+
     st.dataframe(
-        history,
+        display_history,
         use_container_width=True,
         hide_index=True,
     )
 
     st.download_button(
         "전체 기록 CSV 다운로드",
-        data=history.to_csv(index=False).encode("utf-8-sig"),
+        data=display_history.to_csv(index=False).encode("utf-8-sig"),
         file_name="counts.csv",
         mime="text/csv",
         key="download_all_history",
