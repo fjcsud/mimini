@@ -204,10 +204,19 @@ st.subheader("저장된 전체 기록")
 history = read_history()
 
 if not history.empty:
-    history = history.sort_values(
-        by="날짜",
-        ascending=False,
-        ignore_index=True,
+    history["_정렬용 날짜"] = pd.to_datetime(
+        history["날짜"],
+        errors="coerce",
+    )
+    history = (
+        history.sort_values(
+            by="_정렬용 날짜",
+            ascending=False,
+            na_position="last",
+            kind="stable",
+        )
+        .drop(columns="_정렬용 날짜")
+        .reset_index(drop=True)
     )
 
 if history.empty:
